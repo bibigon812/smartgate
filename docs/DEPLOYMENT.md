@@ -131,6 +131,8 @@ Installer должен:
 
 До реализации CLI автоматизированного сценария в репозитории нет. Этот документ — спецификация целевого UX; существующие ручные Ansible-конфиги не являются публичным интерфейсом проекта.
 
+Реальный inventory не коммитится. В репозитории есть только `ansible/inventories/example/hosts.yml.example`; локальный `ansible/inventories/prod/hosts.yml` создаётся из него и исключён через `.gitignore`.
+
 ## 6. `smartgate init`
 
 Мастер задаёт вопросы и пишет `smartgate.yaml`, inventory, ключи и секреты.

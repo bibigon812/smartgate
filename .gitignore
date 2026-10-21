@@ -1,0 +1,24 @@
+# Local inventories: real hosts must never be committed
+ansible/inventories/prod/
+ansible/inventories/local/
+ansible/inventories/*/hosts.yml
+ansible/inventories/*/host_vars/
+ansible/inventories/*/group_vars/
+
+# Generated state
+.work/
+ansible/.ansible/
+ansible/*.retry
+
+# Local config and secrets
+config/smartgate.yaml
+secrets/
+*.vault
+*.key
+*.pem
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/

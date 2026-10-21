@@ -1,0 +1,136 @@
+---
+- name: Check required BIRD settings
+  tags: [bird, 'bird:check', 'bird:install', 'bird:config', 'bird:fragments', 'bird:sysctl', 'bird:service']
+  vars:
+    bird_ospf_effective: "{{ bird_ospf_common | default({}) | combine(bird_ospf | default({}), recursive=True) }}"
+  ansible.builtin.assert:
+    that:
+      - bird_router_id | default('') | length > 0
+      - not (bird_ospf_effective.enabled | default(false)) or (bird_ospf_effective.interfaces | default([]) | length > 0)
+    fail_msg: >-
+      Set bird_router_id and, when OSPF is enabled,
+      bird_ospf.interfaces in the inventory.
+
+- name: Install BIRD package
+  tags: [bird, 'bird:install']
+  ansible.builtin.package:
+    name: "{{ bird_package }}"
+    state: "{{ bird_package_state }}"
+  when: bird_install | bool
+
+- name: Ensure BIRD configuration directory exists
+  tags: [bird, 'bird:dirs', 'bird:config']
+  ansible.builtin.file:
+    path: "{{ bird_config_dir }}"
+    state: directory
+    owner: "{{ bird_owner }}"
+    group: "{{ bird_group }}"
+    mode: "{{ bird_config_dir_mode }}"
+  when: bird_manage_config | bool
+
+- name: Ensure BIRD fragments directory exists
+  tags: [bird, 'bird:dirs', 'bird:fragments', 'bird:config']
+  ansible.builtin.file:
+    path: "{{ bird_fragments_dir }}"
+    state: directory
+    owner: "{{ bird_owner }}"
+    group: "{{ bird_group }}"
+    mode: "{{ bird_fragments_dir_mode }}"
+  when: bird_manage_config | bool
+
+- name: Persist kernel netlink receive buffer
+  tags: [bird, 'bird:sysctl']
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-smartgate-bird.conf
+    content: |
+      net.core.rmem_max = {{ bird_netlink_rmem_max }}
+    owner: root
+    group: root
+    mode: "0644"
+  when: bird_netlink_rmem_max | default(0) | int > 0
+
+- name: Apply kernel netlink receive buffer
+  tags: [bird, 'bird:sysctl']
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -w
+      - "net.core.rmem_max={{ bird_netlink_rmem_max }}"
+  changed_when: false
+  when: bird_netlink_rmem_max | default(0) | int > 0
+
+- name: Deploy BIRD fragment templates
+  tags: [bird, 'bird:fragments']
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ bird_fragments_dir }}/{{ item.name }}"
+    owner: "{{ bird_owner }}"
+    group: "{{ bird_group }}"
+    mode: "{{ bird_config_mode }}"
+    backup: true
+  loop: "{{ bird_fragments | selectattr('src', 'defined') | list }}"
+  when: bird_manage_config | bool
+  notify: Reload BIRD
+
+- name: Deploy BIRD fragments from content
+  tags: [bird, 'bird:fragments']
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ bird_fragments_dir }}/{{ item.name }}"
+    owner: "{{ bird_owner }}"
+    group: "{{ bird_group }}"
+    mode: "{{ bird_config_mode }}"
+    backup: true
+  loop: "{{ bird_fragments | selectattr('content', 'defined') | list }}"
+  when: bird_manage_config | bool
+  notify: Reload BIRD
+
+- name: Deploy validated BIRD configuration
+  tags: [bird, 'bird:config']
+  when: bird_manage_config | bool
+  block:
+    - name: Render BIRD configuration to staging file
+      ansible.builtin.template:
+        src: bird.conf.j2
+        dest: "{{ bird_config_file }}.new"
+        owner: "{{ bird_owner }}"
+        group: "{{ bird_group }}"
+        mode: "{{ bird_config_mode }}"
+
+    - name: Validate staged BIRD configuration
+      ansible.builtin.command:
+        argv:
+          - "{{ bird_binary }}"
+          - -p
+          - -c
+          - "{{ bird_config_file }}.new"
+      changed_when: false
+      when:
+        - bird_validate | bool
+        - not ansible_check_mode
+
+    - name: Install BIRD configuration
+      ansible.builtin.copy:
+        src: "{{ bird_config_file }}.new"
+        dest: "{{ bird_config_file }}"
+        remote_src: true
+        owner: "{{ bird_owner }}"
+        group: "{{ bird_group }}"
+        mode: "{{ bird_config_mode }}"
+        backup: true
+      when: not ansible_check_mode
+      notify: Reload BIRD
+  always:
+    - name: Remove staged BIRD configuration
+      ansible.builtin.file:
+        path: "{{ bird_config_file }}.new"
+        state: absent
+      when: not ansible_check_mode
+
+- name: Enable and start BIRD
+  tags: [bird, 'bird:service']
+  ansible.builtin.systemd:
+    name: "{{ bird_service }}"
+    enabled: true
+    state: started
+  when: bird_manage_service | bool

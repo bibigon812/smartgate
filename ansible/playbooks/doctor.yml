@@ -1,0 +1,33 @@
+---
+- name: SmartGate doctor
+  hosts: all
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Check TUN device
+      ansible.builtin.stat:
+        path: /dev/net/tun
+      register: smartgate_tun
+
+    - name: Check BIRD version
+      ansible.builtin.command: bird --version
+      register: smartgate_bird_version
+      changed_when: false
+      failed_when: false
+
+    - name: Check BIRD route count
+      ansible.builtin.command: birdc show route count
+      register: smartgate_bird_routes
+      changed_when: false
+      failed_when: false
+      when: smartgate_bird_version.rc == 0
+
+    - name: Report target state
+      ansible.builtin.debug:
+        msg:
+          - "host={{ inventory_hostname }}"
+          - "os={{ ansible_distribution | default('unknown') }} {{ ansible_distribution_version | default('') }}"
+          - "kernel={{ ansible_kernel | default('unknown') }}"
+          - "tun={{ smartgate_tun.stat.exists }}"
+          - "bird={{ smartgate_bird_version.stdout | default(smartgate_bird_version.stderr | default('n/a', true), true) }}"
+          - "routes={{ smartgate_bird_routes.stdout | default('n/a', true) }}"

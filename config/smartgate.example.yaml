@@ -1,0 +1,34 @@
+profile: home-single
+
+exit:
+  host: vpn.example.com
+  ssh_user: root
+  ssh_port: 22
+
+edge:
+  host: edge-a
+  lan_interface: enp1s0
+  address: 192.168.10.2/24
+  router: 192.168.10.1
+
+dhcp:
+  mode: edge
+  range: 192.168.10.100-192.168.10.199
+  vip: 192.168.10.254
+
+dns:
+  mode: dot-via-exit
+  fail_closed: true
+
+routes:
+  source: default
+  update: 6h
+
+ha:
+  enabled: false
+
+monitoring:
+  enabled: false
+
+mobile:
+  enabled: false

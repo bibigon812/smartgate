@@ -1,0 +1,113 @@
+---
+- name: SmartGate read-only backup
+  hosts: all
+  gather_facts: true
+  vars:
+    smartgate_remote_archive: "/tmp/smartgate-backup-{{ inventory_hostname }}.tar.gz"
+  tasks:
+    - name: Set backup directory
+      ansible.builtin.set_fact:
+        smartgate_backup_dir: "{{ playbook_dir }}/../../.work/backups/{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
+    - name: Ensure local backup directory
+      ansible.builtin.file:
+        path: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Create configuration archive
+      ansible.builtin.shell: |
+        set -u
+        tar -czf "{{ smartgate_remote_archive }}" --ignore-failed-read \
+          /etc/bird \
+          /etc/unbound \
+          /etc/keepalived \
+          /etc/nftables.conf \
+          /etc/nftables.d \
+          /etc/iptables/rules.v4 \
+          /etc/sysctl.d \
+          /etc/netplan \
+          /etc/network/interfaces \
+          /etc/systemd/system/sshtun@.service \
+          /root/rt_exclude 2>/dev/null || true
+        test -s "{{ smartgate_remote_archive }}"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fetch configuration archive
+      ansible.builtin.fetch:
+        src: "{{ smartgate_remote_archive }}"
+        dest: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}.tar.gz"
+        flat: true
+      changed_when: false
+
+    - name: Extract configuration archive locally
+      ansible.builtin.unarchive:
+        src: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}.tar.gz"
+        dest: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}"
+        remote_src: true
+        extra_opts:
+          - --no-same-owner
+      delegate_to: localhost
+      become: false
+
+    - name: Restrict local archive permissions
+      ansible.builtin.file:
+        path: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}.tar.gz"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Remove remote archive
+      ansible.builtin.file:
+        path: "{{ smartgate_remote_archive }}"
+        state: absent
+      changed_when: false
+
+    - name: Collect runtime state
+      ansible.builtin.shell: |
+        set -u
+        echo "### date"
+        date -Is
+        echo "### uname"
+        uname -a
+        echo "### os-release"
+        cat /etc/os-release
+        echo "### ip addr"
+        ip -brief addr
+        echo "### ip route"
+        ip route show
+        echo "### ip rule"
+        ip rule show
+        echo "### sysctl"
+        sysctl net.ipv4.ip_forward net.ipv4.conf.all.send_redirects net.ipv4.conf.all.accept_redirects net.ipv4.conf.all.rp_filter 2>/dev/null || true
+        echo "### bird version"
+        bird --version 2>&1 || true
+        echo "### bird protocols"
+        birdc show protocols 2>&1 || true
+        echo "### bird route count"
+        birdc show route count 2>&1 || true
+        echo "### bird ospf neighbors"
+        birdc show ospf neighbors 2>&1 || true
+        echo "### route table 11"
+        ip route show table 11 2>&1 || true
+        echo "### units"
+        systemctl list-units --type=service --no-pager 2>&1 | grep -E 'bird|unbound|keepalived|sshtun|rt-exclude|nftables' || true
+      args:
+        executable: /bin/bash
+      register: smartgate_state
+      changed_when: false
+      failed_when: false
+
+    - name: Save runtime state
+      ansible.builtin.copy:
+        content: "{{ smartgate_state.stdout }}\n"
+        dest: "{{ smartgate_backup_dir }}/{{ inventory_hostname }}/runtime.txt"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false

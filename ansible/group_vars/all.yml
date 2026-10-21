@@ -1,0 +1,5 @@
+---
+smartgate_asn: 65000
+smartgate_dns_fail_closed: true
+smartgate_routes_update_interval: "6h"
+smartgate_prefixes_file: /var/lib/smartgate/prefixes.txt

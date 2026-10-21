@@ -1,0 +1,7 @@
+---
+- name: Reload BIRD
+  tags: [bird, 'bird:config', 'bird:fragments', 'bird:service']
+  ansible.builtin.systemd:
+    name: "{{ bird_service }}"
+    state: reloaded
+  when: bird_manage_service | bool

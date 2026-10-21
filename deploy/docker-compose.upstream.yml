@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  smartgate-upstream:
+    build:
+      context: ../upstream
+      dockerfile: Dockerfile
+    container_name: smartgate-upstream
+    restart: always
+    privileged: true
+    network_mode: host
+    volumes:
+      # Пробрасываем файлы настроек FRR внутрь контейнера
+      - ../upstream/frr/daemons:/etc/frr/daemons
+      - ../upstream/frr/frr.conf:/etc/frr/frr.conf
+    environment:
+      - TZ=Europe/Moscow
+      - SS_PASSWORD=${SS_PASSWORD:?set SS_PASSWORD}
+    # Запускаем в фоне сервер Shadowsocks на 443 порту, а затем передаем управление демону FRR
+    command: >
+      bash -c "
+      ssserver -s 0.0.0.0:443 -m aes-256-gcm -k "$${SS_PASSWORD}" --v2ray-plugin &
+      exec /usr/lib/frr/frrinit.sh
+      "

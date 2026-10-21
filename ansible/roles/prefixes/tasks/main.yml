@@ -1,0 +1,93 @@
+---
+- name: Install prefix collection dependencies
+  tags: [prefixes, 'prefixes:setup', 'prefixes:collect', 'prefixes:publish']
+  ansible.builtin.package:
+    name: "{{ prefixes_packages }}"
+    state: present
+  when: prefixes_enabled | bool
+
+- name: Install prefix collection script
+  tags: [prefixes, 'prefixes:setup', 'prefixes:collect', 'prefixes:publish']
+  ansible.builtin.copy:
+    src: "{{ prefixes_script }}"
+    dest: "{{ prefixes_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: prefixes_enabled | bool
+
+- name: Collect external prefixes
+  tags: [prefixes, 'prefixes:collect', 'prefixes:publish']
+  ansible.builtin.command:
+    argv:
+      - "{{ prefixes_script_path }}"
+  environment:
+    PREFIXES_MAX_WORKERS: "{{ prefixes_max_workers }}"
+    PREFIXES_TIMEOUT: "{{ prefixes_timeout }}"
+    PREFIXES_RETRIES: "{{ prefixes_retries }}"
+    PREFIXES_ALLOW_PARTIAL: "{{ 1 if prefixes_allow_partial | bool else 0 }}"
+  register: prefixes_result
+  changed_when: false
+  check_mode: false
+  when:
+    - prefixes_enabled | bool
+    - prefixes_refresh | bool
+    - not ansible_check_mode
+
+- name: Normalize collected prefixes
+  tags: [prefixes, 'prefixes:collect', 'prefixes:publish']
+  ansible.builtin.set_fact:
+    prefixes_collected: >-
+      {{
+        (
+          prefixes_result.stdout_lines
+          | reject('match', '^#')
+          | reject('equalto', '')
+          | list
+          + prefixes_extra_prefixes
+        ) | unique
+      }}
+  when:
+    - prefixes_enabled | bool
+    - prefixes_refresh | bool
+    - not ansible_check_mode
+
+- name: Check collected prefix count
+  tags: [prefixes, 'prefixes:collect', 'prefixes:publish']
+  ansible.builtin.assert:
+    that:
+      - prefixes_collected | length >= prefixes_min_count
+    fail_msg: >-
+      Collected {{ prefixes_collected | length }} prefixes,
+      expected at least {{ prefixes_min_count }}.
+  when:
+    - prefixes_enabled | bool
+    - prefixes_refresh | bool
+    - not ansible_check_mode
+
+- name: Ensure prefix output directory exists
+  tags: [prefixes, 'prefixes:publish']
+  ansible.builtin.file:
+    path: "{{ prefixes_output_path | dirname }}"
+    state: directory
+    owner: "{{ prefixes_output_owner }}"
+    group: "{{ prefixes_output_group }}"
+    mode: "0755"
+  when:
+    - prefixes_enabled | bool
+    - prefixes_refresh | bool
+    - not ansible_check_mode
+
+- name: Publish normalized prefix list
+  tags: [prefixes, 'prefixes:publish']
+  ansible.builtin.copy:
+    content: "{{ prefixes_collected | join('\n') }}\n"
+    dest: "{{ prefixes_output_path }}"
+    owner: "{{ prefixes_output_owner }}"
+    group: "{{ prefixes_output_group }}"
+    mode: "{{ prefixes_output_mode }}"
+    backup: true
+  when:
+    - prefixes_enabled | bool
+    - prefixes_refresh | bool
+    - not ansible_check_mode

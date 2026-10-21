@@ -78,7 +78,7 @@ ru1.dfkj.ru  ── OpenVPN 10.9.0.0/24 ── mobile clients
 
 | Узел | Адрес | Роль | BIRD | Туннели | Особенности |
 |---|---|---|---|---|---|
-| `vpn.dfkj.ru` | публичный | origin + exit | 2.0.8 | 6 | ~47 662 blackhole-префикса, NAT `10.0.0.0/8`, `192.168.0.0/16` |
+| `vpn.dfkj.ru` | публичный | origin + exit | 2.0.8 | 6 | ~36 968 blackhole-префиксов, NAT `10.0.0.0/8`, `192.168.0.0/16` |
 | `ru1.dfkj.ru` | публичный | exit + mobile hub | 2.17.5 | — | OpenVPN `10.9.0.0/24`, NAT `10.9.0.0/24`, `192.168.0.0/24`, таблица `rus` |
 | `t400` | `192.168.0.2` | edge | 2.14 | 2×vpn, 2×ru1 | LAN gateway, 1 Гбит/с, unbound, Prometheus/node_exporter |
 | `box01` | `192.168.0.11` | standby edge | 2.17.5 | 2×vpn | Celeron 847E, 2C, 7.7 ГБ, 1 Гбит/с, `ip_forward=0`, unbound только на localhost |
@@ -87,10 +87,10 @@ ru1.dfkj.ru  ── OpenVPN 10.9.0.0/24 ── mobile clients
 ### 4.3. Control plane
 
 - OSPF area `100`, интерфейсы `tun*` в режиме `ptp`.
-- Таймеры: hello 1, dead 4, retransmit 2.
+- Таймеры: hello 1, dead 4, retransmit 10.
 - Cost: 250 на туннелях к `vpn`/`ru1`, 100 на `t400`.
 - Аутентификации нет; `import all` / `export all`.
-- Внешние префиксы распространяются как **47 647 E2-LSA**. Это главная причина масштабных проблем.
+- Внешние префиксы распространяются как **36 968 E2-LSA**. Это главная причина масштабных проблем.
 - `t400` анонсирует LAN `192.168.0.0/24` с `metric2 1000`, `box01` — с `metric2 10000`. Поэтому `vpn` предпочитает обратный путь через `t400`, а `box01` держит резервный.
 - `vpn` — единственный origin: если он недоступен, новые внешние маршруты не появляются.
 - BGP, VRF и Docker в production не используются.
@@ -217,6 +217,7 @@ LAN clients
   - LAN-префикс `192.168.0.0/24`.
 - **iBGP, AS 65000**, full mesh между `vpn`, `ru1`, `t400`, `box01`. Для четырёх узлов full mesh проще, чем route reflector; при росте — RR.
 - BGP переносит внешние префиксы. `next-hop self`; next-hop резолвится через OSPF.
+- **Источник префиксов:** RIPE Stat API `announced-prefixes` (JSON), только IPv4, с дедупликацией; whois/RADB не используется.
 - Communities:
   - `65000:100` — путь через `vpn`;
   - `65000:200` — путь через `ru1`;
@@ -304,7 +305,9 @@ LAN clients
 
 ```
 ansible/
-  inventories/prod/hosts.yml
+  inventories/
+    example/hosts.yml.example
+    prod/                 # локальный inventory, gitignored
   group_vars/
   host_vars/
   roles/
@@ -331,6 +334,7 @@ legacy/
 
 - `ansible-playbook --check --diff` как обязательный режим.
 - CI: lint YAML, `ansible-lint`, проверка шаблонов BIRD/keepalived.
+- Реальный inventory (`ansible/inventories/prod/`) не коммитится. В репозитории хранится только `example/hosts.yml.example`; локальный `prod/hosts.yml` исключён через `.gitignore`.
 - Старые `upstream/frr`, `gateway/frr`, `deploy/docker-compose`, Shadowsocks-конфиги, `route_injector.py` — в `legacy/` или удалить после подтверждения. Они не должны выглядеть как актуальный стек.
 
 ### 6.11. Управление и развёртывание
@@ -389,7 +393,7 @@ VRRP не защищает от падения `vpn`, `ru1`, роутера `.1`
 ### Этап 0. Фиксация архитектуры
 
 - Обновить этот документ, инвентарь, схемы адресации и AS.
-- Снять бэкапы конфигов и списков префиксов.
+- Снять бэкапы конфигов и списков префиксов: `make backup` (read-only, результат в `.work/backups/`, не коммитится).
 - Ничего не менять на хостах.
 
 ### Этап 1. Безопасные исправления

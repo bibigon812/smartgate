@@ -1,0 +1,23 @@
+zebra=yes
+bgpd=yes
+ospfd=no
+bgp_gossip=no
+watchfrr=yes
+staticd=yes
+bfdd=no
+fabricd=no
+vrrpd=no
+pathd=no
+pbrd=no
+elstd=no
+snmp=no
+
+# Включаем gRPC API (Northbound) для нашего будущего скрипта
+grpcd=yes
+grpcd_options="--listen 127.0.0.1:50051"
+
+# Системные опции для корректной работы демонов
+vtysh_enable=yes
+zebra_options="  -A 127.0.0.1 -s 90000000"
+bgpd_options="   -A 127.0.0.1"
+staticd_options="-A 127.0.0.1"

@@ -1,0 +1,134 @@
+{% set filters = (bird_filters_common | default({})) | combine((bird_filters | default({})), recursive=True) %}
+{% set ospf = (bird_ospf_common | default({})) | combine((bird_ospf | default({})), recursive=True) %}
+{{ bird_log }}
+
+router id {{ bird_router_id }};
+
+{% for table in bird_tables %}
+ipv4 table {{ table }};
+{% endfor %}
+{% if bird_tables %}
+
+{% endif %}
+protocol device {
+}
+
+{% for name, body in filters.items() %}
+filter {{ name }} {
+{{ body | indent(2, true) }}
+}
+
+{% endfor %}
+{% for direct in bird_direct %}
+protocol direct {
+  ipv4 {
+    table {{ direct.table | default('master4') }};
+    import {{ direct.import | default('all') }};
+    export {{ direct.export | default('none') }};
+  };
+  interface{% for iface in direct.interfaces | default([]) %} "{{ iface }}"{% if not loop.last %},{% endif %}{% endfor %};
+}
+
+{% endfor %}
+{% for kernel in bird_kernel %}
+protocol kernel {
+{% if kernel.graceful_restart | default(true) %}
+  graceful restart on;
+{% endif %}
+{% if kernel.netlink_rx_buffer is defined %}
+  netlink rx buffer {{ kernel.netlink_rx_buffer }};
+{% endif %}
+  ipv4 {
+    table {{ kernel.table | default('master4') }};
+    import {{ kernel.import | default('all') }};
+    export {{ kernel.export | default('all') }};
+  };
+}
+
+{% endfor %}
+{% for pipe in bird_pipes %}
+protocol pipe {
+  table {{ pipe.table }};
+  peer table {{ pipe.peer_table }};
+  import {{ pipe.import | default('none') }};
+  export {{ pipe.export | default('all') }};
+}
+
+{% endfor %}
+{% for static in bird_static %}
+protocol static {{ static.name | default('static') }} {
+  ipv4 {
+    table {{ static.table | default('master4') }};
+    import {{ static.import | default('all') }};
+    export {{ static.export | default('none') }};
+  };
+{% for route in static.routes | default([]) %}
+  route {{ route }};
+{% endfor %}
+}
+
+{% endfor %}
+{% if ospf.enabled | default(false) %}
+protocol ospf {
+{% if ospf.graceful_restart | default(true) %}
+  graceful restart on;
+{% endif %}
+  ipv4 {
+    table {{ ospf.table | default('master4') }};
+    import {{ ospf.import | default('all') }};
+    export {{ ospf.export | default('all') }};
+  };
+
+  area {{ ospf.area | default('0.0.0.100') }} {
+{% for iface in ospf.interfaces %}
+    interface "{{ iface.name }}" {
+{% if iface.cost is defined %}
+      cost {{ iface.cost }};
+{% endif %}
+      hello {{ iface.hello | default(1) }};
+      retransmit {{ iface.retransmit | default(bird_ospf_retransmit) }};
+      dead {{ iface.dead | default(4) }};
+      priority {{ iface.priority | default(10) }};
+
+      type {{ iface.type | default('ptp') }};
+{% if (iface.type | default('ptp')) == 'ptp' and (iface.ptp_address | default(true)) %}
+      ptp address on;
+{% endif %}
+{% if (iface.type | default('ptp')) == 'ptp' and (iface.ptp_netmask | default(true)) %}
+      ptp netmask on;
+{% endif %}
+{% if iface.neighbors is defined and iface.neighbors | length > 0 %}
+      neighbors {
+{% for neighbor in iface.neighbors %}
+        {{ neighbor }};
+{% endfor %}
+      };
+{% endif %}
+    };
+{% endfor %}
+  };
+}
+{% endif %}
+{% if bird_bgp.enabled | default(false) %}
+{% for neighbor in bird_bgp.neighbors | default([]) %}
+protocol bgp {{ neighbor.name }} {
+  local as {{ bird_bgp.asn | default(smartgate_asn | default(65000)) }};
+  neighbor {{ neighbor.address }} as {{ neighbor.asn | default(bird_bgp.asn | default(smartgate_asn | default(65000))) }};
+{% if neighbor.description is defined %}
+  description "{{ neighbor.description }}";
+{% endif %}
+  ipv4 {
+    table {{ neighbor.table | default(bird_bgp.table | default('master4')) }};
+    import {{ neighbor.import | default(bird_bgp.import | default('all')) }};
+    export {{ neighbor.export | default(bird_bgp.export | default('all')) }};
+  };
+}
+
+{% endfor %}
+{% endif %}
+{% if bird_extra_config | default('') | length > 0 %}
+{{ bird_extra_config }}
+{% endif %}
+{% if bird_include_fragments | default(true) %}
+include "conf.d/*.conf";
+{% endif %}

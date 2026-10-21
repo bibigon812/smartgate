@@ -1,0 +1,8 @@
+---
+- name: Refresh external prefix list
+  hosts: origins
+  gather_facts: true
+  become: true
+  tags: [prefixes]
+  roles:
+    - role: prefixes

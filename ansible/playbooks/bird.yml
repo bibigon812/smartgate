@@ -1,0 +1,30 @@
+---
+- name: Read external prefix list
+  hosts: origins
+  gather_facts: false
+  become: true
+  tags: [bird, 'bird:adapter', 'bird:fragments']
+  tasks:
+    - name: Publish external prefix list
+      when: bird_external_prefixes | default(false)
+      block:
+        - name: Read normalized prefix list
+          ansible.builtin.slurp:
+            src: "{{ smartgate_prefixes_file | default('/var/lib/smartgate/prefixes.txt') }}"
+          register: bird_prefixes_file
+
+        - name: Set external prefix list
+          ansible.builtin.set_fact:
+            bird_blackhole_prefixes: "{{ (bird_prefixes_file.content | b64decode).splitlines() }}"
+
+        - name: Require a non-empty external prefix list
+          ansible.builtin.assert:
+            that:
+              - bird_blackhole_prefixes | length > 0
+
+- name: Manage BIRD
+  hosts: all
+  gather_facts: true
+  tags: [bird]
+  roles:
+    - role: bird

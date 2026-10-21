@@ -1,0 +1,21 @@
+---
+prefixes_enabled: false
+prefixes_refresh: true
+prefixes_packages:
+  - python3
+
+prefixes_script: get_prefixes.py
+prefixes_script_path: /usr/local/bin/get_prefixes.py
+
+prefixes_output_path: "{{ smartgate_prefixes_file | default('/var/lib/smartgate/prefixes.txt') }}"
+prefixes_output_owner: root
+prefixes_output_group: root
+prefixes_output_mode: "0644"
+
+prefixes_extra_prefixes: []
+prefixes_min_count: 1
+
+prefixes_max_workers: 2
+prefixes_timeout: 30
+prefixes_retries: 3
+prefixes_allow_partial: false

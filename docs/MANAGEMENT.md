@@ -85,6 +85,8 @@ mobile:
 
 Это производные файлы. Пользователь не должен править их руками: при следующем `plan` они будут перезаписаны. Для ручной правки есть `smartgate render --output ./ansible`, после чего пользователь владеет результатом.
 
+Реальный inventory (`ansible/inventories/prod/hosts.yml`) и `config/smartgate.yaml` игнорируются git. В репозитории хранится только `ansible/inventories/example/hosts.yml.example` с placeholder-адресами.
+
 ### 3.3. Секреты
 
 - Отдельный SSH-ключ на каждый edge/origin.

@@ -48,6 +48,9 @@ Golden path — `home-single`: один edge, один exit, one-arm, edge DHCP,
 
 ```text
 ARCHITECTURE.md
+Makefile      # check, doctor, backup, plan
+ansible/      # inventory, playbooks, роли
+config/       # smartgate.example.yaml
 docs/
   DEPLOYMENT.md
   MANAGEMENT.md
@@ -56,7 +59,21 @@ gateway/      # старые заготовки, требуют ревизии
 upstream/     # старые заготовки, требуют ревизии
 ```
 
+Локальный `ansible/inventories/prod/hosts.yml` исключён через `.gitignore`; в репозитории хранится только `example/hosts.yml.example`. Реальные адреса и доступы в git не попадают.
+
 Старые каталоги не отражают текущий production-стек и будут перенесены в `legacy/` или удалены после подтверждения.
+
+## Локальная проверка
+
+```bash
+cp ansible/inventories/example/hosts.yml.example ansible/inventories/prod/hosts.yml
+make check    # граф inventory
+make backup   # read-only снимок конфигов в .work/backups/
+make doctor   # read-only проверка TUN, BIRD и ОС
+make plan     # ansible --check --diff
+```
+
+Нужен `ansible-core`. `make backup` ничего не меняет на хостах; `.work/` исключён из git.
 
 ## Лицензия
 

@@ -1,0 +1,11 @@
+---
+- name: SmartGate site
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Report target
+      ansible.builtin.debug:
+        msg:
+          - "host={{ inventory_hostname }}"
+          - "address={{ ansible_host | default(inventory_hostname) }}"
+          - "os={{ ansible_distribution | default('unknown') }} {{ ansible_distribution_version | default('') }}"

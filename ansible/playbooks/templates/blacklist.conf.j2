@@ -1,0 +1,13 @@
+protocol static {
+  ipv4 {
+    table {{ bird_blackhole_table | default('blacklist') }};
+    import all;
+    export none;
+  };
+
+  # BEGIN:gen
+{% for prefix in bird_blackhole_prefixes %}
+  route {{ prefix }} blackhole;
+{% endfor %}
+  # END:gen
+}

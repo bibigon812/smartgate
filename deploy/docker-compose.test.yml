@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  smartgate-upstream:
+    image: smartgate-upstream:latest
+    container_name: smartgate-upstream
+    restart: always
+    privileged: true
+    # Разрешаем контейнеру полноценно управлять своей собственной сетью
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "443:443/tcp"  # Shadowsocks-обфускация
+      - "179:179/tcp"  # eBGP маршрутизация
+    volumes:
+      - ../upstream/frr/daemons:/etc/frr/daemons
+      - ../upstream/frr/frr.conf:/etc/frr/frr.conf
+    environment:
+      - TZ=Europe/Moscow
+    command: /usr/lib/frr/docker-start

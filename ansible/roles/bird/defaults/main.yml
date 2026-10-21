@@ -1,0 +1,54 @@
+---
+bird_install: true
+bird_package: bird2
+bird_package_state: present
+
+bird_manage_config: true
+bird_manage_service: true
+bird_validate: true
+bird_netlink_rmem_max: 0
+
+bird_service: bird
+bird_binary: /usr/sbin/bird
+bird_config_dir: /etc/bird
+bird_config_dir_mode: "0750"
+bird_config_file: "{{ bird_config_dir }}/bird.conf"
+bird_fragments_dir: "{{ bird_config_dir }}/conf.d"
+bird_fragments_dir_mode: "0755"
+bird_include_fragments: true
+
+bird_owner: bird
+bird_group: bird
+bird_config_mode: "0640"
+
+bird_log: "log syslog all;"
+bird_router_id: ""
+bird_tables: []
+bird_filters: {}
+bird_filters_common: {}
+bird_direct: []
+bird_kernel: []
+bird_pipes: []
+bird_static: []
+
+bird_ospf_common: {}
+bird_ospf_retransmit: 10
+bird_ospf:
+  enabled: false
+  table: master4
+  import: all
+  export: all
+  graceful_restart: true
+  area: 0.0.0.100
+  interfaces: []
+
+bird_bgp:
+  enabled: false
+  asn: "{{ smartgate_asn | default(65000) }}"
+  table: master4
+  import: all
+  export: all
+  neighbors: []
+
+bird_fragments: []
+bird_extra_config: ""

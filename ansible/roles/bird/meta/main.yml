@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: bird
+  author: SmartGate
+  description: BIRD routing daemon with OSPF underlay and optional BGP
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - all
+dependencies: []

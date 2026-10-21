@@ -1,0 +1,29 @@
+---
+all:
+  hosts:
+    vpn:
+      ansible_host: vpn.example.com
+      ansible_user: root
+    ru1:
+      ansible_host: ru1.example.com
+      ansible_user: root
+    edge-a:
+      ansible_host: 192.168.10.2
+      ansible_user: smartgate
+      ansible_become: true
+    edge-b:
+      ansible_host: 192.168.10.11
+      ansible_user: smartgate
+      ansible_become: true
+  children:
+    origins:
+      hosts:
+        vpn:
+    exits:
+      hosts:
+        vpn:
+        ru1:
+    edges:
+      hosts:
+        edge-a:
+        edge-b:
