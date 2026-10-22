@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: sshtun
+  author: SmartGate
+  description: SSH L3 tunnels (tunN over ssh -w) managed through a systemd template unit
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+    - name: Ubuntu
+      versions:
+        - all
+dependencies: []

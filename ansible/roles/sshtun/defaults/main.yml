@@ -1,0 +1,57 @@
+---
+sshtun_enabled: true
+sshtun_install: true
+sshtun_manage_config: true
+sshtun_manage_service: true
+sshtun_manage_keys: true
+sshtun_validate: true
+sshtun_purge: true
+
+sshtun_packages:
+  - openssh-client
+
+sshtun_tunnels: []
+
+# Publish generated public keys into root@exit authorized_keys so the
+# tunnel can authenticate. Requires delegated SSH access to exit hosts.
+sshtun_publish_keys: true
+sshtun_authorized_keys_root: /root/.ssh
+sshtun_authorized_keys_file: /root/.ssh/authorized_keys
+
+sshtun_config_dir: /etc/smartgate/sshtun
+sshtun_config_dir_mode: "0750"
+sshtun_keys_dir: "{{ sshtun_config_dir }}/keys"
+sshtun_keys_dir_mode: "0700"
+sshtun_state_dir: /var/lib/smartgate/sshtun
+sshtun_script_path: /usr/local/bin/sshtun-connect
+sshtun_unit_path: /etc/systemd/system/sshtun@.service
+sshtun_systemd_dir: /etc/systemd/system
+
+sshtun_after: network-online.target
+sshtun_wanted_by: multi-user.target
+sshtun_restart_sec: 3
+
+# Stock ssh client options; a tunnel may override the whole list via ssh_options.
+sshtun_ssh_options:
+  - BatchMode=yes
+  - ServerAliveInterval=15
+  - ServerAliveCountMax=3
+  - TCPKeepAlive=yes
+  - ExitOnForwardFailure=yes
+  - AddressFamily=inet
+  - StrictHostKeyChecking=accept-new
+
+# Tunnel MTU. The raw path to the exit is typically 1500, but ssh -w
+# adds TCP encapsulation overhead (~100 B), so the tun device must be
+# smaller to avoid fragmentation; 1400 is the defensive choice: one inner packet
+# encapsulation overhead, one outer TCP segment per inner packet.
+sshtun_mtu: 1400
+sshtun_dev_wait: 30
+sshtun_check_interval: 30
+sshtun_check_down_threshold: 3
+sshtun_backoff_base: 5
+sshtun_backoff_max: 300
+
+# Seed known_hosts from ansible controller with ssh-keyscan (per tunnel
+# opt-in via tunnel item: seed_known_hosts: true).
+sshtun_manage_known_hosts: false

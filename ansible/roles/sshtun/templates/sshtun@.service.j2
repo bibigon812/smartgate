@@ -1,0 +1,22 @@
+[Unit]
+Description=SmartGate SSH tunnel (%i)
+Documentation=file:///usr/share/doc/smartgate/README.md
+Wants={{ sshtun_after }}
+After={{ sshtun_after }}
+ConditionPathExists={{ sshtun_script_path }}
+
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Unknown instances (legacy numeric names like sshtun@30) skip cleanly
+# instead of looping on a missing EnvironmentFile.
+ConditionPathExists={{ sshtun_config_dir }}/%i.env
+EnvironmentFile={{ sshtun_config_dir }}/%i.env
+ExecStart={{ sshtun_script_path }} %i
+Restart=on-failure
+RestartSec={{ sshtun_restart_sec }}
+TimeoutStopSec=30
+
+[Install]
+WantedBy={{ sshtun_wanted_by }}

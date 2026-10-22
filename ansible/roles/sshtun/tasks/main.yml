@@ -1,0 +1,362 @@
+---
+- name: Resolve tunnel definitions
+  tags: [sshtun, 'sshtun:check', 'sshtun:install', 'sshtun:dirs', 'sshtun:keys', 'sshtun:authorize', 'sshtun:known_hosts', 'sshtun:script', 'sshtun:unit', 'sshtun:config', 'sshtun:service', 'sshtun:purge']
+  ansible.builtin.set_fact:
+    sshtun_resolved: >-
+      {%- set resolved = [] -%}
+      {%- for t in sshtun_tunnels -%}
+      {%- set base = {
+        'ssh_user': 'root',
+        'exit_port': 22,
+        'exit_inventory_host': t.exit_host,
+        'mtu': sshtun_mtu,
+        'manage_remote': true,
+        'enabled': true,
+        'state': 'started',
+        'seed_known_hosts': false,
+        'ssh_options': sshtun_ssh_options,
+        'ssh_key': sshtun_keys_dir ~ '/' ~ t.name,
+        'known_hosts': sshtun_state_dir ~ '/' ~ t.name ~ '/known_hosts',
+        'dev_wait': sshtun_dev_wait,
+        'check_interval': sshtun_check_interval,
+        'check_down_threshold': sshtun_check_down_threshold,
+        'backoff_base': sshtun_backoff_base,
+        'backoff_max': sshtun_backoff_max,
+      } -%}
+      {%- set item = base | combine(t, recursive=True) -%}
+      {%- set item = item | combine({'tun': item.tun | default(t.name | regex_replace('^tun', ''))}) -%}
+      {%- set _ = resolved.append(item) -%}
+      {%- endfor -%}
+      {{ resolved }}
+
+- name: Check tunnel definitions
+  tags: [sshtun, 'sshtun:check']
+  vars:
+    names: "{{ (sshtun_resolved | map(attribute='name') | list) }}"
+    tuns: "{{ (sshtun_resolved | map(attribute='tun') | list) }}"
+  ansible.builtin.assert:
+    that:
+      - sshtun_enabled | bool
+      - names | length == names | unique | length
+      - tuns | length == tuns | unique | length
+      - names | select('match', '^tun[0-9]+$') | list | length == names | length
+    fail_msg: >-
+      Tunnel names must be unique, match tunN and carry unique tun indices.
+      Hosts without client tunnels (e.g. exits) may leave sshtun_tunnels empty.
+
+- name: Check each tunnel definition
+  tags: [sshtun, 'sshtun:check']
+  ansible.builtin.assert:
+    that:
+      - t.exit_host | default('') | length > 0
+      - t.local_addr is defined and '/' in (t.local_addr | string)
+      - t.remote_addr is defined and '/' in (t.remote_addr | string)
+      - not (t.manage_remote | bool) or (t.ssh_user == 'root')
+    fail_msg: >-
+      Tunnel {{ t.name }}: exit_host, local_addr and remote_addr are required;
+      manage_remote requires ssh_user=root on the exit side.
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+
+- name: Install SSH client packages
+  tags: [sshtun, 'sshtun:install']
+  ansible.builtin.package:
+    name: "{{ sshtun_packages }}"
+    state: present
+  when: sshtun_install | bool
+
+- name: Ensure sshtun directories exist
+  tags: [sshtun, 'sshtun:dirs', 'sshtun:install', 'sshtun:keys', 'sshtun:config', 'sshtun:authorize']
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ sshtun_config_dir }}"
+      mode: "{{ sshtun_config_dir_mode }}"
+    - path: "{{ sshtun_keys_dir }}"
+      mode: "{{ sshtun_keys_dir_mode }}"
+    - path: "{{ sshtun_state_dir }}"
+      mode: "0755"
+
+- name: Generate per-tunnel SSH keys
+  tags: [sshtun, 'sshtun:keys', 'sshtun:install']
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -q
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - "smartgate-sshtun-{{ t.name }}@{{ inventory_hostname }}"
+      - -f
+      - "{{ t.ssh_key }}"
+    creates: "{{ t.ssh_key }}"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when: sshtun_manage_keys | bool
+
+- name: Set per-tunnel SSH key permissions
+  tags: [sshtun, 'sshtun:keys']
+  ansible.builtin.file:
+    path: "{{ t.ssh_key }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when: sshtun_manage_keys | bool
+
+- name: Read tunnel public keys
+  tags: [sshtun, 'sshtun:authorize']
+  ansible.builtin.slurp:
+    src: "{{ t.ssh_key }}.pub"
+  register: sshtun_pub_keys
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when: sshtun_publish_keys | bool
+
+- name: Ensure ssh directory on exit hosts
+  tags: [sshtun, 'sshtun:authorize']
+  ansible.builtin.file:
+    path: "{{ sshtun_authorized_keys_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  delegate_to: "{{ t.exit_inventory_host }}"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when: sshtun_publish_keys | bool
+
+- name: Authorize tunnel keys on exit hosts
+  tags: [sshtun, 'sshtun:authorize']
+  ansible.builtin.lineinfile:
+    path: "{{ sshtun_authorized_keys_file }}"
+    line: "{{ (sshtun_pub_keys.results
+              | selectattr('t.name', 'equalto', t.name)
+              | first).content | b64decode | trim }}"
+    owner: root
+    group: root
+    mode: "0600"
+    backup: true
+    create: true
+  delegate_to: "{{ t.exit_inventory_host }}"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when:
+    - sshtun_publish_keys | bool
+    - not ansible_check_mode
+
+- name: Scan exit host keys
+  tags: [sshtun, 'sshtun:known_hosts']
+  ansible.builtin.command:
+    argv:
+      - ssh-keyscan
+      - -p
+      - "{{ t.exit_port }}"
+      - -t
+      - ecdsa,ed25519,rsa
+      - -T
+      - 10
+      - "{{ t.exit_host }}"
+  delegate_to: localhost
+  become: false
+  register: sshtun_keyscan_result
+  changed_when: false
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when:
+    - sshtun_manage_known_hosts | bool
+    - t.seed_known_hosts | bool
+    - not ansible_check_mode
+
+- name: Publish known_hosts for tunnels
+  tags: [sshtun, 'sshtun:known_hosts']
+  ansible.builtin.copy:
+    content: "{{ scan.stdout }}"
+    dest: "{{ t.known_hosts }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when:
+    - sshtun_manage_known_hosts | bool
+    - t.seed_known_hosts | bool
+    - (sshtun_keyscan_result.results
+       | selectattr('t.name', 'equalto', t.name)
+       | first).stdout | default('') | length > 0
+
+- name: Install sshtun-connect wrapper script
+  tags: [sshtun, 'sshtun:script', 'sshtun:install']
+  vars:
+    sshtun_script_validate: /bin/sh -n %s
+  ansible.builtin.template:
+    src: sshtun-connect.j2
+    dest: "{{ sshtun_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: sshtun_manage_config | bool
+  notify: Restart sshtun tunnels
+
+- name: Install sshtun systemd template unit
+  tags: [sshtun, 'sshtun:unit', 'sshtun:service']
+  ansible.builtin.template:
+    src: sshtun@.service.j2
+    dest: "{{ sshtun_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: sshtun_manage_config | bool
+  notify: Restart sshtun tunnels
+
+- name: Deploy per-tunnel environment files
+  tags: [sshtun, 'sshtun:config']
+  ansible.builtin.template:
+    src: sshtun.env.j2
+    dest: "{{ sshtun_config_dir }}/{{ t.name }}.env"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when: sshtun_manage_config | bool
+  notify: Restart sshtun tunnels
+
+- name: List installed sshtun instances
+  tags: [sshtun, 'sshtun:purge']
+  ansible.builtin.find:
+    paths: "{{ sshtun_systemd_dir }}"
+    patterns: sshtun@*.service
+    recurse: true
+    file_type: any
+  register: sshtun_units_found
+  when:
+    - sshtun_purge | bool
+    - sshtun_resolved | length > 0
+    - not ansible_check_mode
+
+- name: Remove stale tunnels
+  tags: [sshtun, 'sshtun:purge']
+  vars:
+    fresh: "{{ sshtun_resolved | map(attribute='name') | list }}"
+    stale_units: >-
+      {{ sshtun_units_found.files
+         | map(attribute='path')
+         | map('basename')
+         | map('regex_replace', '^sshtun@(.*)\.service$', '\1')
+         | reject('equalto', '')
+         | difference(fresh)
+         | unique
+         | list }}
+  when:
+    - sshtun_purge | bool
+    - sshtun_resolved | length > 0
+    - not ansible_check_mode
+  block:
+    - name: Stop and disable stale tunnels
+      ansible.builtin.systemd:
+        name: "sshtun@{{ unit }}"
+        enabled: false
+        state: stopped
+      failed_when: false
+      loop: "{{ stale_units }}"
+      loop_control:
+        label: "{{ unit }}"
+        loop_var: unit
+
+    - name: Remove stale unit symlinks
+      ansible.builtin.file:
+        path: "{{ sshtun_systemd_dir }}/sshtun@{{ unit }}.service"
+        state: absent
+      loop: "{{ stale_units }}"
+      loop_control:
+        label: "{{ unit }}"
+        loop_var: unit
+
+    - name: Remove stale wants symlinks
+      ansible.builtin.file:
+        path: "{{ sshtun_systemd_dir }}/{{ sshtun_wanted_by }}.wants/sshtun@{{ unit }}.service"
+        state: absent
+      loop: "{{ stale_units }}"
+      loop_control:
+        label: "{{ unit }}"
+        loop_var: unit
+
+    - name: Remove stale tunnel env files
+      ansible.builtin.file:
+        path: "{{ sshtun_config_dir }}/{{ unit }}.env"
+        state: absent
+      loop: "{{ stale_units }}"
+      loop_control:
+        label: "{{ unit }}"
+        loop_var: unit
+
+    - name: Remove stale tunnel state dirs
+      ansible.builtin.file:
+        path: "{{ sshtun_state_dir }}/{{ unit }}"
+        state: absent
+      loop: "{{ stale_units }}"
+      loop_control:
+        label: "{{ unit }}"
+        loop_var: unit
+
+- name: Validate sshtun template unit
+  tags: [sshtun, 'sshtun:unit', 'sshtun:validate']
+  ansible.builtin.command:
+    argv:
+      - systemd-analyze
+      - verify
+      - "{{ sshtun_unit_path }}"
+  changed_when: false
+  when:
+    - sshtun_validate | bool
+    - not ansible_check_mode
+
+- name: Check if template unit exists
+  tags: [sshtun, 'sshtun:service']
+  ansible.builtin.stat:
+    path: "{{ sshtun_unit_path }}"
+  register: sshtun_unit_stat
+  changed_when: false
+
+- name: Manage sshtun tunnel services
+  tags: [sshtun, 'sshtun:service']
+  ansible.builtin.systemd:
+    name: "sshtun@{{ t.name }}"
+    enabled: "{{ t.enabled | bool }}"
+    state: "{{ t.state | default('started') if t.enabled | default(true) else 'stopped' }}"
+  loop: "{{ sshtun_resolved }}"
+  loop_control:
+    label: "{{ t.name }}"
+    loop_var: t
+  when:
+    - sshtun_manage_service | bool
+    - not ansible_check_mode or sshtun_unit_stat.stat.exists

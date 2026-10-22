@@ -1,0 +1,10 @@
+---
+- name: Manage SSH tunnels
+  hosts: all:!origins
+  gather_facts: true
+  become: true
+  tags: [sshtun]
+  roles:
+    - role: sshtun
+      when:
+        - sshtun_tunnels | default([]) | length > 0

@@ -11,10 +11,36 @@ all:
       ansible_host: 192.168.10.2
       ansible_user: smartgate
       ansible_become: true
+      sshtun_tunnels:
+        - name: tun10
+          exit_host: vpn.example.com
+          local_addr: 10.11.10.2/30
+          remote_addr: 10.11.10.1/30
+        - name: tun11
+          exit_host: vpn.example.com
+          local_addr: 10.11.11.2/30
+          remote_addr: 10.11.11.1/30
+        - name: tun14
+          exit_host: ru1.example.com
+          local_addr: 10.14.0.2/30
+          remote_addr: 10.14.0.1/30
+        - name: tun15
+          exit_host: ru1.example.com
+          local_addr: 10.14.1.2/30
+          remote_addr: 10.14.1.1/30
     edge-b:
       ansible_host: 192.168.10.11
       ansible_user: smartgate
       ansible_become: true
+      sshtun_tunnels:
+        - name: tun30
+          exit_host: vpn.example.com
+          local_addr: 10.30.0.2/30
+          remote_addr: 10.30.0.1/30
+        - name: tun31
+          exit_host: vpn.example.com
+          local_addr: 10.30.1.2/30
+          remote_addr: 10.30.1.1/30
   children:
     origins:
       hosts:

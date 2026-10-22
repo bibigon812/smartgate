@@ -1,0 +1,22 @@
+---
+- name: Restart sshtun tunnels
+  tags: [sshtun, 'sshtun:config', 'sshtun:service']
+  block:
+    - name: Reload systemd manager configuration
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: not ansible_check_mode
+      listen: Restart sshtun tunnels
+
+    - name: Restart enabled sshtun tunnels
+      ansible.builtin.systemd:
+        name: "sshtun@{{ item.name }}"
+        state: restarted
+      loop: "{{ sshtun_tunnels }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when:
+        - sshtun_manage_service | bool
+        - item.enabled | default(true)
+        - not ansible_check_mode
+      listen: Restart sshtun tunnels

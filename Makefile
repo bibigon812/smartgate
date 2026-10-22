@@ -5,7 +5,7 @@ ANSIBLE_PLAYBOOK := $(VENV)/bin/ansible-playbook
 LIMIT ?=
 ANSIBLE_LIMIT := $(if $(LIMIT),--limit $(LIMIT),)
 
-.PHONY: venv check doctor backup plan prefixes prefixes-collect prefixes-publish bird bird-config bird-fragments bird-sysctl bird-netlink
+.PHONY: venv check doctor backup plan prefixes prefixes-collect prefixes-publish bird bird-config bird-fragments bird-sysctl bird-netlink tunnels tunnels-config tunnels-keys tunnels-known-hosts tunnels-purge tunnels-service
 
 venv:
 	test -x $(VENV)/bin/python || uv venv $(VENV)
@@ -46,3 +46,21 @@ bird-sysctl:
 
 bird-netlink:
 	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/bird.yml --tags 'bird:sysctl,bird:config' $(ANSIBLE_LIMIT)
+
+tunnels:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml $(ANSIBLE_LIMIT)
+
+tunnels-config:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml --tags 'sshtun:config' $(ANSIBLE_LIMIT)
+
+tunnels-keys:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml --tags 'sshtun:keys,sshtun:install' $(ANSIBLE_LIMIT)
+
+tunnels-known-hosts:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml --tags 'sshtun:known_hosts' $(ANSIBLE_LIMIT)
+
+tunnels-purge:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml --tags 'sshtun:purge' $(ANSIBLE_LIMIT)
+
+tunnels-service:
+	cd $(ANSIBLE_DIR) && $(ANSIBLE_PLAYBOOK) playbooks/tunnels.yml --tags 'sshtun:service' $(ANSIBLE_LIMIT)

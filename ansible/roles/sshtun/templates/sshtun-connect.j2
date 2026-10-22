@@ -1,0 +1,124 @@
+#!/bin/sh
+# Managed by Ansible (sshtun role). Local changes will be overwritten.
+#
+# Supervises one L3 SSH tunnel (ssh -w tunN:tunN) for instance %i:
+# - connects with exponential backoff between attempts;
+# - configures the local tunnel device with `ip addr replace` (idempotent);
+# - configures the remote side inside the same SSH session (no second
+#   connection);
+# - checks the device state via `ip link`, not by pinging the exit.
+
+set -u
+
+: "${SSHTUN_NAME:?SSHTUN_NAME is not set}"
+: "${SSHTUN_TUN:?SSHTUN_TUN is not set}"
+: "${SSHTUN_EXIT_HOST:?SSHTUN_EXIT_HOST is not set}"
+: "${SSHTUN_EXIT_PORT:?SSHTUN_EXIT_PORT is not set}"
+: "${SSHTUN_SSH_USER:?SSHTUN_SSH_USER is not set}"
+: "${SSHTUN_SSH_KEY:?SSHTUN_SSH_KEY is not set}"
+: "${SSHTUN_LOCAL_ADDR:?SSHTUN_LOCAL_ADDR is not set}"
+: "${SSHTUN_REMOTE_ADDR:?SSHTUN_REMOTE_ADDR is not set}"
+: "${SSHTUN_MTU:?SSHTUN_MTU is not set}"
+: "${SSHTUN_DEV_WAIT:?SSHTUN_DEV_WAIT is not set}"
+: "${SSHTUN_CHECK_INTERVAL:?SSHTUN_CHECK_INTERVAL is not set}"
+: "${SSHTUN_DOWN_THRESHOLD:?SSHTUN_DOWN_THRESHOLD is not set}"
+: "${SSHTUN_BACKOFF_BASE:?SSHTUN_BACKOFF_BASE is not set}"
+: "${SSHTUN_BACKOFF_MAX:?SSHTUN_BACKOFF_MAX is not set}"
+
+SSHTUN_SSH_OPTIONS="${SSHTUN_SSH_OPTIONS:-}"
+SSHTUN_REMOTE_CMD="${SSHTUN_REMOTE_CMD:-exec sleep 2147483647}"
+
+dev="tun${SSHTUN_TUN}"
+target="${SSHTUN_SSH_USER}@${SSHTUN_EXIT_HOST}"
+peer="${SSHTUN_REMOTE_ADDR%%/*}"
+attempts=0
+
+while :; do
+  if [ "${attempts}" -gt 0 ]; then
+    delay="${SSHTUN_BACKOFF_BASE}"
+    i=1
+    while [ "${i}" -lt "${attempts}" ]; do
+      delay=$(( delay * 2 ))
+      i=$(( i + 1 ))
+    done
+    if [ "${delay}" -gt "${SSHTUN_BACKOFF_MAX}" ]; then
+      delay="${SSHTUN_BACKOFF_MAX}"
+    fi
+    echo "sshtun: ${SSHTUN_NAME}: attempt ${attempts}, sleeping ${delay}s"
+    sleep "${delay}"
+  fi
+
+  ssh -n \
+    -w "${SSHTUN_TUN}:${SSHTUN_TUN}" \
+    -p "${SSHTUN_EXIT_PORT}" \
+    -i "${SSHTUN_SSH_KEY}" \
+    ${SSHTUN_SSH_OPTIONS} \
+    "${target}" \
+    ${SSHTUN_REMOTE_CMD} &
+  pid=$!
+
+  waited=0
+  while [ "${waited}" -lt "${SSHTUN_DEV_WAIT}" ]; do
+    if ip link show dev "${dev}" >/dev/null 2>&1; then
+      break
+    fi
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+
+  if ! ip link show dev "${dev}" >/dev/null 2>&1; then
+    echo "sshtun: ${SSHTUN_NAME}: device ${dev} did not appear"
+    if kill -0 "${pid}" 2>/dev/null; then
+      kill "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+    fi
+    attempts=$(( attempts + 1 ))
+    continue
+  fi
+
+  if ! ip addr replace "${SSHTUN_LOCAL_ADDR}" peer "${peer}" dev "${dev}" 2>/dev/null; then
+    echo "sshtun: ${SSHTUN_NAME}: ip addr replace failed on ${dev}"
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+    attempts=$(( attempts + 1 ))
+    continue
+  fi
+
+  ip link set dev "${dev}" mtu "${SSHTUN_MTU}" up 2>/dev/null || true
+
+  down=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    sleep "${SSHTUN_CHECK_INTERVAL}"
+    flags="$(ip link show dev "${dev}" 2>/dev/null | awk '
+      {
+        if (match($0, /<[^>]*>/)) {
+          s = substr($0, RSTART + 1, RLENGTH - 2)
+          n = split(s, parts, ",")
+          up = 0
+          for (j = 1; j <= n; j++) {
+            if (parts[j] == "UP") {
+              up = 1
+            }
+          }
+          print up
+          exit
+        }
+      }')"
+
+    if [ "${flags}" = "1" ]; then
+      down=0
+    else
+      down=$(( down + 1 ))
+    fi
+    if [ "${down}" -ge "${SSHTUN_DOWN_THRESHOLD}" ]; then
+      echo "sshtun: ${SSHTUN_NAME}: device ${dev} is down, restarting connection"
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
+
+  wait "${pid}" 2>/dev/null || true
+  attempts=$(( attempts + 1 ))
+done
