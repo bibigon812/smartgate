@@ -99,10 +99,10 @@ ru1.dfkj.ru  ── OpenVPN 10.9.0.0/24 ── mobile clients
 
 - Туннели поднимаются `sshtun@.service`: `ssh -w N:N -N -T` плюс отдельный SSH для назначения адреса.
 - Маршруты лежат в `main`; исключения — в таблице `exclude` (`ip rule` priority 32765); default — через `192.168.0.1`.
-- На exit-узлах есть отдельные таблицы `blacklist` (`vpn`) и `rus` (`ru1`).
+- Именованных BIRD-таблиц нет ни на одном узле — всё в `master4` (см. «Обновления 2026-10-27»).
 - NAT выполняется только на exit-узлах; edge-узлы — чистые маршрутизаторы.
 - `rt_exclude` — ручной скрипт. Сейчас в таблице 11 записей: `1.0.0.1`, `1.1.1.1`, `8.8.4.4`, `8.8.8.8`, `87.240.129.0/24`, `87.240.132.0/24`, `87.240.137.0/24`, `93.186.225.0/24`, `176.114.120.0/24`, `176.114.122.0/24`, `176.114.124.0/24`. На `t400` и `box01` нет unit/timer/cron, поэтому после ребута таблица исчезает.
-- MTU 1500; MSS clamp 1374 на `t400`, 1400 на `vpn`, на `ru1` clamp нет.
+- Туннели `sshtun` держат MTU 1400; MSS clamp 1340 на всех узлах (на `ru1` — iptables mangle FORWARD `-i/-o tun+`, применён 2026-10-27; персистентность требует проверки после ребута).
 - IPv6 глобально не используется; на edge-узлах нет forwarding, но политика IPv6 не зафиксирована.
 
 ### 4.5. DNS
@@ -135,7 +135,7 @@ ru1.dfkj.ru  ── OpenVPN 10.9.0.0/24 ── mobile clients
 - 47 647 E2-LSA в area 100; 47 651 маршрут на edge-узлах; простая агрегация даёт около 9 823 сетей.
 - Ошибки: `Bad DBDES packet ... I-bit mismatch`, `too late for DD exchange`, `Cannot find next hop for LSA (Type: 2001 ...)`, `Kernel dropped some netlink messages, will resync`.
 - Churn: ~126 млн export-обновлений на `ru1`, ~50 млн на `t400`.
-- Причина next-hop ошибок: на `vpn` OSPF живёт в таблице `blacklist`, а connected-адреса туннелей — в `master4`; pipe импортирует только часть префиксов.
+- Причина next-hop ошибок: на `vpn` OSPF жил в таблице `blacklist`, а connected-адреса туннелей — в `master4`; pipe импортировал только часть префиксов. **Исправлено 2026-10-27**: OSPF на `vpn` переведён в `master4` (connected-маршруты туннелей в той же таблице), пайпы и whitelist-фильтр удалены; в логах ошибок next-hop больше нет.
 - OSPF — link-state протокол; 47k внешних префиксов в нём — неверное применение. Это не «много маршрутов», это «много LSА, которые флудятся каждому участнику».
 
 ### 5.2. Отказоустойчивость
@@ -217,6 +217,14 @@ LAN clients
   - LAN-префикс `192.168.0.0/24`.
 - **iBGP, AS 65000**, full mesh между `vpn`, `ru1`, `t400`, `box01`. Для четырёх узлов full mesh проще, чем route reflector; при росте — RR.
 - BGP переносит внешние префиксы. `next-hop self`; next-hop резолвится через OSPF.
+
+### 4.3.1. Обновления 2026-10-27
+
+- Конфигурация BIRD управляется Ansible (`ansible/playbooks/bird.yml`, роль `bird`): единые фильтры в `group_vars/all.yml`, рендер → `bird -p` → install → reload; prod-инвентарь не коммитится.
+- OSPF на всех узлах живёт в `master4`; на `vpn` убраны pipe `blacklist→master4`, whitelist-фильтр и именованная таблица — static-37k рендерится сразу в `master4` (`bird_blackhole_table: master4`).
+- Единый принцип kernel: `kernel_reject_local` (`source ~ [RTS_DEVICE, RTS_STATIC]` → reject) — узел не устанавливает в ядро свои device/static-маршруты, только выученное.
+- Фильтр `ospf_export_cost` (device-маршруты анонсируются с `ospf_metric2`) — общий; используется edges и `ru1` (анонс OpenVPN-хаба `10.9.0.0/24`); `vpn` — исключение: `ospf_export_no_device` (6 транзитных tun-сетей не анонсируются).
+- Tilda `185.215.4.0/24`: единственный origin — `ru1` (static blackhole рендерится сразу в `master4`, фрагмент `tilda.conf`; пайп и таблица `rus` убраны) → OSPF E2. `vpn` больше не ре-анонсирует её, ECMP-лотерея на edge'ах исчезла; hairpin vpn→ru1 сохраняется (vpn держит выученный E2-маршрут в kernel).
 - **Источник префиксов:** RIPE Stat API `announced-prefixes` (JSON), только IPv4, с дедупликацией; whois/RADB не используется.
 - Communities:
   - `65000:100` — путь через `vpn`;

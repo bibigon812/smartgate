@@ -40,23 +40,12 @@
 
 - name: Persist kernel netlink receive buffer
   tags: [bird, 'bird:sysctl']
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/99-smartgate-bird.conf
-    content: |
-      net.core.rmem_max = {{ bird_netlink_rmem_max }}
-    owner: root
-    group: root
-    mode: "0644"
-  when: bird_netlink_rmem_max | default(0) | int > 0
-
-- name: Apply kernel netlink receive buffer
-  tags: [bird, 'bird:sysctl']
-  ansible.builtin.command:
-    argv:
-      - sysctl
-      - -w
-      - "net.core.rmem_max={{ bird_netlink_rmem_max }}"
-  changed_when: false
+  ansible.posix.sysctl:
+    name: net.core.rmem_max
+    sysctl_file: /etc/sysctl.d/99-smartgate-bird.conf
+    value: "{{ bird_netlink_rmem_max }}"
+    reload: true
+    state: present
   when: bird_netlink_rmem_max | default(0) | int > 0
 
 - name: Deploy BIRD fragment templates

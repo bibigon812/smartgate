@@ -4,7 +4,6 @@
   ansible.builtin.package:
     name: "{{ prefixes_packages }}"
     state: present
-  when: prefixes_enabled | bool
 
 - name: Install prefix collection script
   tags: [prefixes, 'prefixes:setup', 'prefixes:collect', 'prefixes:publish']
@@ -14,7 +13,6 @@
     owner: root
     group: root
     mode: "0755"
-  when: prefixes_enabled | bool
 
 - name: Collect external prefixes
   tags: [prefixes, 'prefixes:collect', 'prefixes:publish']
@@ -30,7 +28,6 @@
   changed_when: false
   check_mode: false
   when:
-    - prefixes_enabled | bool
     - prefixes_refresh | bool
     - not ansible_check_mode
 
@@ -48,7 +45,6 @@
         ) | unique
       }}
   when:
-    - prefixes_enabled | bool
     - prefixes_refresh | bool
     - not ansible_check_mode
 
@@ -61,7 +57,6 @@
       Collected {{ prefixes_collected | length }} prefixes,
       expected at least {{ prefixes_min_count }}.
   when:
-    - prefixes_enabled | bool
     - prefixes_refresh | bool
     - not ansible_check_mode
 
@@ -74,7 +69,6 @@
     group: "{{ prefixes_output_group }}"
     mode: "0755"
   when:
-    - prefixes_enabled | bool
     - prefixes_refresh | bool
     - not ansible_check_mode
 
@@ -88,6 +82,5 @@
     mode: "{{ prefixes_output_mode }}"
     backup: true
   when:
-    - prefixes_enabled | bool
     - prefixes_refresh | bool
     - not ansible_check_mode

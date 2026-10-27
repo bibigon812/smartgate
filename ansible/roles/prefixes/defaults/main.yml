@@ -1,5 +1,4 @@
 ---
-prefixes_enabled: false
 prefixes_refresh: true
 prefixes_packages:
   - python3

@@ -89,7 +89,6 @@ protocol ospf {
       retransmit {{ iface.retransmit | default(bird_ospf_retransmit) }};
       dead {{ iface.dead | default(4) }};
       priority {{ iface.priority | default(10) }};
-
       type {{ iface.type | default('ptp') }};
 {% if (iface.type | default('ptp')) == 'ptp' and (iface.ptp_address | default(true)) %}
       ptp address on;
